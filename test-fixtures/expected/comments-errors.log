@@ -1,0 +1,18 @@
+0001 <?php
+0002 $var = 10; // if while echo
+0003 # $echo another valid comment
+0004 $url = "http://example.com # not a comment";
+0005 $a = 1; // comment
+0006 continues here
+0007 $b = 2;
+0008 stray words
+0009 $c = 3; / bad comment
+0010 /* block
+0011 comment */
+0012 $d = 4; /* ok on one line */
+0013 ?>
+
+Error 300. Line 0006. Text 'continues here' appears to continue the inline comment of line 0005; inline comments end at the end of the line and cannot span multiple lines (start this line with // or #).
+Error 301. Line 0008. Text 'stray words' is not valid PHP code and is not marked as a comment; inline comments must start with // or #.
+Error 302. Line 0009. Malformed comment marker '/' at column 9; inline comments must start exactly with '//' or '#'.
+Error 303. Line 0010. Comment starting at column 1 spans lines 0010 to 0011; comments must not extend across multiple lines (use // or # on each line).

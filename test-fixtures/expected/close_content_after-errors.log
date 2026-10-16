@@ -1,0 +1,7 @@
+0001 <?php
+0002 echo "hi";
+0003 ?>
+0004 echo "hello";
+
+Error 114. Line 0003. 1 line break(s) found after the closing tag '?>'; the file must end immediately after '?>'.
+Error 112. Line 0004. Content 'echo "hello";' found after the closing tag '?>' (line 0004); the closing tag must be on the last line of the file.

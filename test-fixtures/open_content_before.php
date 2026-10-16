@@ -1,0 +1,5 @@
+echo "";
+
+<?php
+echo "hi";
+?>

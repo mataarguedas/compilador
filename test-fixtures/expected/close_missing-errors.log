@@ -1,0 +1,4 @@
+0001 <?php
+0002 echo "hi";
+
+Error 110. Line 0002. Closing tag '?>' not found; the file must end with '?>'.

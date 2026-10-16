@@ -1,0 +1,8 @@
+0001 <?php
+0002 // Gestión de información
+0003 $nombre = "Señor";
+0004 $año = 2024;
+0005 echo $nombre;
+0006 ?>
+
+Error 202. Line 0004. Invalid identifier '$año': character 'ñ' at position 3 is not allowed; only letters, digits (0-9) and underscores (_) may follow the first character.

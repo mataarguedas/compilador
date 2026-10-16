@@ -1,0 +1,25 @@
+0001 <?php
+0002 $variable = 1;
+0003 $_data = 2;
+0004 $name1 = 3;
+0005 $1variable = 4;
+0006 $-data = 5;
+0007 $if = 10;
+0008 $else = true;
+0009 $1a = 1; $for = 2;
+0010 $If = 3;
+0011 $na@me = 6;
+0012 total = 7;
+0013 const MAX = 10;
+0014 $notas[0] = 5;
+0015 $x == 5;
+0016 ?>
+
+Error 200. Line 0005. Invalid identifier '$1variable': it starts with the digit '1' after '$'; an identifier must start with a letter (a-z, A-Z) or underscore (_).
+Error 201. Line 0006. Invalid identifier '$-data': character '-' after '$' is not allowed; an identifier must start with a letter (a-z, A-Z) or underscore (_).
+Error 204. Line 0007. Invalid identifier '$if': 'if' is a reserved word and cannot be used as an identifier.
+Error 204. Line 0008. Invalid identifier '$else': 'else' is a reserved word and cannot be used as an identifier.
+Error 200. Line 0009. Invalid identifier '$1a': it starts with the digit '1' after '$'; an identifier must start with a letter (a-z, A-Z) or underscore (_).
+Error 204. Line 0009. Invalid identifier '$for': 'for' is a reserved word and cannot be used as an identifier.
+Error 202. Line 0011. Invalid identifier '$na@me': character '@' at position 4 is not allowed; only letters, digits (0-9) and underscores (_) may follow the first character.
+Error 203. Line 0012. Invalid identifier 'total': the assignment target does not start with '$'; variables must start with the dollar sign.

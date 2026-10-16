@@ -1,0 +1,8 @@
+0001 echo "";
+0002 
+0003 <?php
+0004 echo "hi";
+0005 ?>
+
+Error 100. Line 0001. Text 'echo "";' found before the opening tag '<?php' (line 0001); the opening tag must be the first characters of the file.
+Error 101. Line 0002. Blank line found before the opening tag '<?php' (line 0002); nothing may precede the opening tag.

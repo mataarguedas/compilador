@@ -1,0 +1,6 @@
+0001 <?php
+0002 echo "hi";
+0003 ?>
+0004 
+
+Error 114. Line 0003. 2 line break(s) found after the closing tag '?>'; the file must end immediately after '?>'.

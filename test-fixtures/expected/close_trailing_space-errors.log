@@ -1,0 +1,5 @@
+0001 <?php
+0002 echo "hi";
+0003 ?>  
+
+Error 113. Line 0003. 2 whitespace character(s) found after the closing tag '?>'; nothing may follow it.

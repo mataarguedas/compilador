@@ -1,0 +1,739 @@
+===================================================================================================
+                        ANALIZADOR LEXICO PARA PHP - INFORME DEL PROYECTO
+===================================================================================================
+
+1. PORTADA
+---------------------------------------------------------------------------------------------------
+  Proyecto     : Analizador léxico para PHP (etapa de análisis léxico de un compilador)
+  Curso        : Compiladores 03307
+  Profesor     : Daniel Montero Badilla
+  Integrantes  : Emmanuel Enrique Mata Arguedas.
+  Fecha        : 11 de octubre de 2026
+  Entregables  : compilador.jar (carpeta dist), código fuente (proyecto NetBeans), INFORME.txt
+                 PRD.md, CLAUDE.md y PROMPTS.md (documentación del uso de IA, sección 12)
+
+
+2. DESCRIPCIÓN DEL ANALIZADOR LÉXICO Y ALCANCE
+---------------------------------------------------------------------------------------------------
+El programa implementa la etapa de análisis léxico de un compilador para el lenguaje PHP. Es una
+aplicación de consola escrita en Java puro, sin librerías externas y sin expresiones regulares.
+Realiza cuatro tareas:
+
+  a) Busca el archivo .php que está en la misma carpeta que el .jar y lo lee sin alterar su
+     formato (espacios, tabulaciones, líneas en blanco y saltos de línea originales).
+  b) Divide el texto en tokens (lexemas) mediante autómatas escritos a mano, carácter por
+     carácter.
+  c) Valida las etiquetas de apertura y cierre (<?php y ?>), los identificadores que aparecen a
+     la izquierda del operador de asignación = y los comentarios de línea (// y #).
+  d) Genera el archivo <nombre>-errors.log con una copia numerada del código fuente y, al final,
+     la lista de errores encontrados (uno por línea, con su código, su número de línea y una
+     descripción específica).
+
+Alcance: solo el análisis léxico. No se realiza análisis sintáctico ni semántico (por ejemplo,
+no se detectan variables sin declarar). Las limitaciones se detallan en la sección 11.
+
+
+3. REQUISITOS
+---------------------------------------------------------------------------------------------------
+  - Java (JDK o JRE) versión 8 o superior. El código solo usa características de Java 8.
+  - El comando "java" debe estar disponible en el PATH.
+
+Cómo comprobarlo: abra una ventana de CMD y escriba
+
+      java -version
+
+Debe aparecer un texto similar a:
+
+      openjdk version "25.0.4" 2026-07-21 LTS
+
+(cualquier versión 1.8 o superior sirve). Si aparece "java no se reconoce como un comando
+interno o externo", consulte la sección 10.
+
+Para compilar desde el código fuente se necesita además el JDK (javac) y NetBeans o Apache Ant
+(NetBeans ya incluye Ant).
+
+
+4. ESTRUCTURA DEL PROYECTO Y ARQUITECTURA ORIENTADA A OBJETOS
+---------------------------------------------------------------------------------------------------
+4.1 Carpetas
+
+  compilador/
+    build.xml, nbproject/     Proyecto NetBeans "Java with Ant" (compilación con Ant)
+    src/compilador/           Código fuente (paquete base: compilador)
+    test/compilador/          FixtureRunner: pruebas automáticas sin JUnit
+    test-fixtures/            Archivos .php de prueba y sus logs esperados (carpeta expected/)
+    dist/                     compilador.jar generado por la compilación
+    INFORME.txt               Este documento
+
+4.2 Paquetes y clases
+
+  compilador.Compilador       Clase principal. Solo ejecuta new Application().run(args).
+  app/        Application (orquesta todo), FileAnalyzer (tubería de análisis de un archivo),
+              AnalysisResult, CliOptions (argumentos), ExitCode (códigos de salida)
+  io/         PhpFileLocator (busca el .php), SourceFileReader (lee bytes sin alterar),
+              SourceFile y SourceLine (texto y líneas con su terminador original),
+              ErrorLogWriter y LogFormat (escriben el archivo -errors.log)
+  lexer/      Etapas 1 y 2 (ver 4.3)
+  lexer/pattern/  Etapa 3 (ver 4.3)
+  validation/ Etapa 4 (ver 4.3)
+  symbols/    SymbolTable y SymbolEntry: tabla de símbolos sensible a mayúsculas
+  errors/     ErrorCode (catálogo de códigos), LexicalError (un error), ErrorCollector
+  report/     ConsoleReporter: única clase, junto con Application, que escribe en la consola
+
+4.3 Las cuatro etapas del análisis léxico
+
+  ETAPA 1 - OBTENCIÓN DE TOKENS (paquete lexer)
+    CharacterStream  Recorre el texto carácter por carácter; lleva posición, línea y columna
+                     (\r\n cuenta como un solo salto de línea); permite mirar adelante (peek),
+                     consumir (advance) y retroceder (mark/reset).
+    LexerMode        Dos modos: INLINE (fuera de PHP) y PHP (dentro de <?php ... ?>).
+    Lexer            Bucle principal. En modo PHP prueba los patrones en este orden: salto de
+                     línea, espacios, cierre ?>, comentario de línea, comentario de bloque,
+                     cadena, variable, número, palabra y operador. Si ningún patrón acepta el
+                     carácter, produce un token UNKNOWN. En modo INLINE solo reconoce <?; el
+                     resto es texto INLINE_TEXT. Nunca se pierde un carácter: la concatenación
+                     de todos los lexemas es idéntica al archivo (LexemeInvariant lo verifica).
+
+  ETAPA 2 - CLASIFICACIÓN DE TOKENS (paquete lexer)
+    TokenType        Tipos: OPEN_TAG, CLOSE_TAG, INLINE_TEXT, VARIABLE, IDENTIFIER, KEYWORD,
+                     INTEGER_LITERAL, FLOAT_LITERAL, STRING_LITERAL, INLINE_COMMENT,
+                     BLOCK_COMMENT, ASSIGN, COMPARISON_OPERATOR, ARITHMETIC_OPERATOR,
+                     LOGICAL_OPERATOR, CONCAT_OPERATOR, OTHER_OPERATOR, SEMICOLON, COMMA,
+                     LPAREN, RPAREN, LBRACE, RBRACE, LBRACKET, RBRACKET, WHITESPACE, NEWLINE,
+                     UNKNOWN, MALFORMED_NUMBER, UNTERMINATED_STRING, UNTERMINATED_COMMENT.
+    TokenCategory    Categoría de cada tipo: TAG, KEYWORD, IDENTIFIER, LITERAL, OPERATOR,
+                     DELIMITER, COMMENT, LAYOUT, INLINE_TEXT o ERROR.
+    Token            Tipo, lexema, línea, columna, línea final y la marca "reported".
+    TokenClassifier  Asigna el tipo final: una palabra es KEYWORD si es palabra reservada; un
+                     operador recibe su tipo (= es ASSIGN, == es COMPARISON_OPERATOR, ; es
+                     SEMICOLON, etc.).
+    ReservedWords    Las 20 palabras reservadas del enunciado.
+
+  ETAPA 3 - DETERMINACIÓN DE PATRONES (LÓGICA EQUIVALENTE) (paquete lexer.pattern)
+    Cada patrón implementa la interfaz LexemePattern (canStart y match) y es un autómata
+    escrito a mano. No se usa java.util.regex. La expresión regular equivalente de cada uno es:
+
+      NewlinePattern        \r\n|\r|\n
+      WhitespacePattern     [ \t]+
+      OpenTagPattern        <\?(=|[ \t]*[pP]([hH][pP]?)?)?
+      CloseTagPattern       \?>
+      InlineCommentPattern  (//|#)[^\r\n]*
+      BlockCommentPattern   /\*([^*]|\*+[^*/])*\*+/
+      StringPattern         q([^q\\]|\\.)*q     (q es ', " o `)
+      VariablePattern       \$[A-Za-z0-9_]*
+      NumberPattern         D | D\.D? | \.D | exponentes [eE][+-]?D | 0x.. | 0b.. | 0o..
+                            (D = [0-9](_?[0-9])*); seguido de [A-Za-z0-9_] => MALFORMED_NUMBER
+      WordPattern           [A-Za-z_][A-Za-z0-9_]*
+      OperatorPattern       ===|==|=|... (coincidencia más larga sobre la tabla de operadores)
+
+    Los patrones más complejos (VariablePattern, NumberPattern, StringPattern y
+    BlockCommentPattern) usan un enum State con un ciclo de transiciones explícito. La tabla
+    de transiciones está en el Javadoc de cada clase. PatternRegistry define el orden de prueba.
+
+  ETAPA 4 - VALIDACIÓN DE LEXEMAS (paquete validation)
+    Validator (interfaz) y ValidationContext (fuente + tokens). ValidationPipeline ejecuta los
+    validadores en este orden fijo:
+      1. OpeningTagValidator   Etiqueta de apertura <?php       (códigos 100-106)
+      2. ClosingTagValidator   Etiqueta de cierre ?>            (códigos 110-116)
+      3. IdentifierValidator   Identificadores a la izquierda de = (códigos 200-205), con
+                               AssignmentTargetExtractor y AssignmentTarget
+      4. CommentValidator      Comentarios                       (códigos 300-304)
+      5. LexemeValidator       Cadenas, caracteres y números     (códigos 400-402)
+    Un token que ya generó un error de identificador queda marcado como "reported" y los
+    validadores posteriores no lo vuelven a reportar.
+
+
+5. COMPILACIÓN
+---------------------------------------------------------------------------------------------------
+Opción A - NetBeans:
+  1. Abrir el proyecto (File > Open Project > carpeta compilador).
+  2. Clic derecho sobre el proyecto > "Clean and Build".
+  3. El resultado aparece en la carpeta dist:  dist\compilador.jar
+
+Opción B - Línea de comandos (desde la carpeta raíz del proyecto):
+
+      ant clean jar
+
+  Si "ant" no está en el PATH, se puede usar el Ant que trae NetBeans:
+
+      "C:\Program Files\Apache NetBeans\extide\ant\bin\ant.bat" clean jar
+
+IMPORTANTE: "Clean and Build" / "ant clean" borra la carpeta dist. Para no perder archivos,
+build.xml tiene el paso "-post-jar", que después de crear el .jar copia automáticamente
+codigo.php e INFORME.txt de la carpeta raíz a dist. Al terminar, dist contiene compilador.jar,
+codigo.php e INFORME.txt, listos para ejecutar. Las copias de dist se reemplazan en cada
+compilación, así que los cambios deben hacerse en los archivos de la carpeta raíz.
+
+Pruebas automáticas (opcional, sin JUnit), desde la raíz del proyecto:
+
+      javac -encoding UTF-8 -d build\fixtures -cp build\classes test\compilador\FixtureRunner.java
+      java -cp build\classes;build\fixtures compilador.FixtureRunner test-fixtures
+
+  Debe terminar con "16 passed, 0 failed, 16 total".
+
+
+6. EJECUCIÓN PASO A PASO DESDE CMD
+---------------------------------------------------------------------------------------------------
+  1. Abrir CMD: tecla Windows, escribir "cmd" y presionar Enter.
+  2. Ir a la carpeta dist del proyecto, por ejemplo:
+
+        cd C:\dev\compilador\dist
+
+  3. La compilación ya deja codigo.php en esa carpeta. Para analizar otro archivo, copiarlo en
+     esa misma carpeta, junto a compilador.jar:
+
+        copy C:\ruta\del\archivo\codigo.php .
+
+  4. Ejecutar:
+
+        java -jar compilador.jar
+
+     El programa busca en la carpeta del .jar todos los archivos cuyo nombre termina
+     exactamente en ".php" (en minúscula), los analiza en orden alfabético y genera un log por
+     cada uno. No hace falta indicar el nombre del archivo ni ninguna configuración. Los
+     archivos con otra extensión (.PHP, .php.txt, .phtml, .txt) se listan como ignorados.
+
+  5. Ver el resultado:
+
+        type codigo-errors.log
+
+Argumento opcional: se puede indicar un archivo concreto:
+
+        java -jar compilador.jar codigo.php
+
+  Si el archivo no termina en ".php" se muestra:
+     ERROR: 'codigo.txt' does not have the required .php extension; the file was not processed.
+
+Opción --tokens (o -t): además muestra en consola la tabla de tokens (línea, columna, tipo,
+categoría y lexema) y confirma que la concatenación de lexemas es igual al archivo:
+
+        java -jar compilador.jar --tokens
+
+Códigos de salida:
+  0  Se analizó al menos un archivo (aunque tenga errores léxicos).
+  1  No se encontró ningún .php, la extensión es incorrecta o hubo un error de lectura o
+     escritura (por ejemplo, carpeta de solo lectura).
+
+     En caso de que se quiera hacer directamente de netbeans, el archivo compilador/codigo.php es el que va a generar el archivo compilador/codigo-errores.log,
+      mientras que hacer el proceso en la consola CMD obtendrá los resultados por medio de la carpeta compilador/dist, en la que se encuentra el archivo compilador.jar
+
+
+7. ARCHIVO DE SALIDA
+---------------------------------------------------------------------------------------------------
+Nombre: <nombre>-errors.log, en la misma carpeta que el .php (codigo.php -> codigo-errors.log).
+Si ya existe, se reemplaza.
+
+Formato:
+  - Cada línea del código fuente se copia precedida de su número con 4 dígitos y un espacio:
+        0001 <?php
+    El contenido después del prefijo es idéntico byte a byte al original, incluido su salto de
+    línea original (\r\n, \n o \r). Con más de 9999 líneas el número crece a 5 dígitos
+    (10000). El separador de un espacio está en la constante LogFormat.NUMBER_SEPARATOR.
+  - Luego una línea vacía y la sección de errores, ordenada por línea, columna y código:
+        Error <código>. Line <NNNN>. <descripción específica>
+  - Si no hay errores se escribe: No lexical errors found.
+  - El log se escribe con la misma codificación con la que se leyó el archivo (UTF-8 o
+    ISO-8859-1).
+  - Los mensajes de error están en inglés, tal como los define la especificación del proyecto.
+
+7.1 Ejemplo real: codigo.php (sin errores)
+
+Salida de consola (C:\dev\compilador\dist> java -jar compilador.jar):
+
+  PHP Lexical Analyzer
+  Ignored   : README.TXT (extension '.TXT' is not '.php')
+
+  File      : C:\dev\compilador\dist\codigo.php
+  Lines     : 53   Tokens: 274   Errors: 0
+  Log       : C:\dev\compilador\dist\codigo-errors.log
+  Identifiers (case-sensitive symbol table):
+    $nombre_estudiante    first line 0005   occurrences 1
+    $cantidad_notas       first line 0006   occurrences 4
+    $notas                first line 0009   occurrences 3
+    $suma_notas           first line 0016   occurrences 4
+    $i                    first line 0018   occurrences 5
+    $promedio             first line 0022   occurrences 2
+    $contador_revision    first line 0035   occurrences 5
+    $mensaje_final        first line 0043   occurrences 2
+    $total                first line 0047   occurrences 2
+    $Total                first line 0048   occurrences 2
+    $resultado            first line 0050   occurrences 1
+
+Contenido de codigo-errors.log:
+
+  0001 <?php
+  0002 // Sistema simple de gestión de notas
+  0003 
+  0004 # Datos del estudiante
+  0005 $nombre_estudiante = "Carlos";
+  0006 $cantidad_notas = 4;
+  0007 
+  0008 // Arreglo de notas
+  0009 $notas = array(85, 90, 78, 92);
+  0010 
+  0011 // Mostrar información inicial
+  0012 echo "Estudiante: $nombre_estudiante\n";
+  0013 echo "Cantidad de notas: $cantidad_notas\n";
+  0014 
+  0015 // Calcular promedio usando for
+  0016 $suma_notas = 0;
+  0017 
+  0018 for ($i = 0; $i < $cantidad_notas; $i = $i + 1) {
+  0019     $suma_notas = $suma_notas + $notas[$i];
+  0020 }
+  0021 
+  0022 $promedio = $suma_notas / $cantidad_notas;
+  0023 
+  0024 // Mostrar promedio
+  0025 echo "Promedio: $promedio\n";
+  0026 
+  0027 // Evaluar estado del estudiante
+  0028 if ($promedio >= 70) {
+  0029     echo "Estado: Aprobado\n";
+  0030 } else {
+  0031     echo "Estado: Reprobado\n";
+  0032 }
+  0033 
+  0034 // Contador de revisión usando while
+  0035 $contador_revision = 0;
+  0036 
+  0037 while ($contador_revision < $cantidad_notas) {
+  0038     echo "Revisando nota: " . $notas[$contador_revision] . "\n";
+  0039     $contador_revision = $contador_revision + 1;
+  0040 }
+  0041 
+  0042 // Información adicional
+  0043 $mensaje_final = "Proceso finalizado correctamente";
+  0044 echo $mensaje_final;
+  0045 
+  0046 // Diferenciación de identificadores
+  0047 $total = 100;
+  0048 $Total = 200;
+  0049 
+  0050 $resultado = $total + $Total;
+  0051 echo "\nResultado final: $resultado\n";
+  0052 
+  0053 ?>
+
+  No lexical errors found.
+
+7.2 Ejemplo real: identifiers.php (con errores)
+
+Salida de consola (java -jar compilador.jar identifiers.php):
+
+  PHP Lexical Analyzer
+
+  File      : C:\dev\compilador\dist\identifiers.php
+  Lines     : 16   Tokens: 117   Errors: 8
+  Log       : C:\dev\compilador\dist\identifiers-errors.log
+  Identifiers (case-sensitive symbol table):
+    $variable    first line 0002   occurrences 1
+    $_data       first line 0003   occurrences 1
+    $name1       first line 0004   occurrences 1
+    $if          first line 0007   occurrences 1
+    $else        first line 0008   occurrences 1
+    $for         first line 0009   occurrences 1
+    $If          first line 0010   occurrences 1
+    $na          first line 0011   occurrences 1
+    $notas       first line 0014   occurrences 1
+    $x           first line 0015   occurrences 1
+
+Contenido de identifiers-errors.log (en el archivo real cada error ocupa UNA sola línea; aquí
+las líneas largas se partieron para respetar el ancho de este documento: las líneas de
+continuación tienen 4 espacios más de sangría):
+
+  0001 <?php
+  0002 $variable = 1;
+  0003 $_data = 2;
+  0004 $name1 = 3;
+  0005 $1variable = 4;
+  0006 $-data = 5;
+  0007 $if = 10;
+  0008 $else = true;
+  0009 $1a = 1; $for = 2;
+  0010 $If = 3;
+  0011 $na@me = 6;
+  0012 total = 7;
+  0013 const MAX = 10;
+  0014 $notas[0] = 5;
+  0015 $x == 5;
+  0016 ?>
+
+  Error 200. Line 0005. Invalid identifier '$1variable': it starts with the digit '1' after '$'; an
+      identifier must start with a letter (a-z, A-Z) or underscore (_).
+  Error 201. Line 0006. Invalid identifier '$-data': character '-' after '$' is not allowed; an
+      identifier must start with a letter (a-z, A-Z) or underscore (_).
+  Error 204. Line 0007. Invalid identifier '$if': 'if' is a reserved word and cannot be used as an
+      identifier.
+  Error 204. Line 0008. Invalid identifier '$else': 'else' is a reserved word and cannot be used as
+      an identifier.
+  Error 200. Line 0009. Invalid identifier '$1a': it starts with the digit '1' after '$'; an
+      identifier must start with a letter (a-z, A-Z) or underscore (_).
+  Error 204. Line 0009. Invalid identifier '$for': 'for' is a reserved word and cannot be used as
+      an identifier.
+  Error 202. Line 0011. Invalid identifier '$na@me': character '@' at position 4 is not allowed;
+      only letters, digits (0-9) and underscores (_) may follow the first character.
+  Error 203. Line 0012. Invalid identifier 'total': the assignment target does not start with '$';
+      variables must start with the dollar sign.
+
+Observe que la línea 0009 produce dos errores independientes, que $If (con mayúscula) no es
+error, que $notas[0] se valida como $notas y que $x == 5 no se valida porque == no es
+asignación. La tabla de símbolos muestra $total y $Total como identificadores distintos
+(ejemplo 7.1).
+
+
+8. CATÁLOGO COMPLETO DE ERRORES
+---------------------------------------------------------------------------------------------------
+Cada error indica el lexema o carácter exacto y, cuando es útil, la columna. Si en una línea
+hay varios problemas, se reporta cada uno por separado. Los textos citados de más de 40
+caracteres se recortan a 40 y se agrega "...".
+
+8.1 Etiqueta de apertura <?php
+  100  Texto antes de la etiqueta de apertura (en líneas anteriores o en la misma línea).
+       Ejemplo:  echo "";   (línea 1)   <?php  (línea 3)
+  101  Línea en blanco o espacios antes de <?php.        Ejemplo: "  <?php"
+  102  Etiqueta mal escrita (no es exactamente <?php).   Ejemplo: <?PHP, <? php, <?=
+  103  El archivo no contiene <? (se reporta en la línea 1). Ejemplo: archivo vacío.
+  104  <?php pegado a otro carácter.                     Ejemplo: <?phpecho 1;
+  105  Una segunda etiqueta de apertura.                 Ejemplo: ?> <p> <?php ...
+  106  El archivo tiene BOM de UTF-8 (marca invisible al inicio). Guardar como UTF-8 sin BOM.
+
+8.2 Etiqueta de cierre ?>
+  110  No existe ?> (se reporta en la última línea). Si hay un ?> dentro de un comentario, el
+       mensaje lo indica, porque ese ?> se ignora.
+  111  Cierre mal escrito en la última línea.            Ejemplo: ? >
+  112  Contenido en una línea posterior a ?> (un error por línea). Ejemplo: ?> y luego echo 1;
+  113  Espacios o tabulaciones después de ?> en su misma línea.  Ejemplo: "?>  "
+  114  Saltos de línea después de ?> (se cuentan todos, incluidas las líneas en blanco).
+       Ejemplo: el archivo termina en "?>" + Enter.
+  115  Texto después de ?> en la misma línea.            Ejemplo: ?> echo 2;
+  116  Un ?> que no es el último del archivo (indica la columna).
+
+8.3 Identificadores (solo el destino de la asignación =)
+  200  Empieza con dígito después de $.                  Ejemplo: $1variable = 4;
+  201  Carácter no permitido después de $, o $ solo.     Ejemplo: $-data = 5;  $ñame = 1;
+  202  Carácter no permitido después del primero (uno por carácter, con su posición).
+       Ejemplo: $na@me = 6;  (posición 4)
+  203  El destino no empieza con $.                      Ejemplo: total = 7;
+  204  El nombre es una palabra reservada (comparación exacta de mayúsculas).
+       Ejemplo: $if = 10;   (pero $If = 3; es válido)
+  205  No hay identificador a la izquierda de =.         Ejemplo: = 5;
+  Palabras reservadas: class function if while echo else continue for return public null
+  false true trim foreach private include print const do.
+  Después de const se valida un nombre de constante (no necesita $). Ejemplo: const MAX = 10;
+
+8.4 Comentarios
+  300  Texto que parece continuar el comentario de la línea anterior.
+       Ejemplo: $a = 1; // comentario    (línea 5)   continua aqui   (línea 6)
+  301  Texto suelto que no es código PHP ni está marcado como comentario.
+       Ejemplo: palabras sueltas
+  302  Marcador de comentario mal formado: una sola / al inicio de una instrucción.
+       Ejemplo: $c = 3; / comentario malo     (la división $a / $b NO es error)
+  303  Comentario /* ... */ que ocupa varias líneas.
+  304  Comentario /* que nunca se cierra.
+
+8.5 Otros lexemas
+  400  Cadena sin comilla de cierre. Ejemplo: $s = "sin cerrar;
+  401  Carácter no reconocido, con su código Unicode. Ejemplo: € (U+20AC)
+  402  Número seguido directamente de letras. Ejemplo: 12abc
+
+
+9. DECISIONES DE DISEÑO
+---------------------------------------------------------------------------------------------------
+  - Mayúsculas en identificadores: los identificadores distinguen mayúsculas y minúsculas.
+    $total y $Total son entradas distintas en la tabla de símbolos, y $if es error pero $If no.
+    En cambio, una palabra suelta se clasifica como KEYWORD sin importar mayúsculas (ECHO es
+    palabra clave), igual que en PHP. Ambas reglas son constantes en la clase ReservedWords.
+  - "Include": el enunciado escribe Include con mayúscula; se trata como la palabra reservada
+    include.
+  - ?> dentro de un comentario: el contenido de un comentario de línea se ignora por completo,
+    incluido ?>. En PHP real, ?> sí terminaría el comentario; aquí se sigue la regla del
+    enunciado ("el contenido del comentario se ignora") y el error 110 lo explica.
+  - Separador: entre el número de línea y el texto hay un espacio (0001 <?php). Si se requiere
+    sin espacio, basta cambiar LogFormat.NUMBER_SEPARATOR a "".
+  - BOM: la marca BOM de UTF-8 se detecta, se reporta como error 106 y no se copia al log,
+    porque es un marcador de codificación y no un carácter visible.
+  - Codificación: se intenta leer como UTF-8 estricto; si falla, se lee como ISO-8859-1. El
+    log se escribe con la misma codificación.
+  - Recuperación de cadenas sin cerrar: una cadena que llega al final del archivo sin su
+    comilla termina al final de su propia línea (error 400) y el análisis continúa en la línea
+    siguiente, para que no "trague" el ?> final.
+  - Archivo sin <?: se analiza completo en modo PHP para que las demás validaciones se sigan
+    ejecutando (además del error 103).
+  - Sin librerías externas ni expresiones regulares: solo se usa el JDK. Cada patrón es un
+    autómata escrito a mano y su Javadoc indica la expresión regular equivalente.
+  - Identificadores solo ASCII: letras a-z y A-Z, dígitos y _. La ñ y las tildes no son
+    válidas en identificadores.
+
+
+10. SOLUCIÓN DE PROBLEMAS
+---------------------------------------------------------------------------------------------------
+  "java no se reconoce como un comando interno o externo"
+     Java no está instalado o no está en el PATH. Instale un JDK/JRE 8 o superior y agregue su
+     carpeta bin a la variable de entorno PATH (Panel de control > Sistema > Configuración
+     avanzada > Variables de entorno). Cierre y vuelva a abrir CMD.
+
+  Las tildes o la ñ se ven mal en la consola
+     Ejecute "chcp 65001" en CMD antes de correr el programa. El archivo .log no se ve afectado:
+     ábralo con un editor como Notepad o VS Code.
+
+  Aparece el error 114 aunque el archivo "termina" en ?>
+     La mayoría de los editores (incluido NetBeans) agregan un salto de línea al final del
+     archivo al guardar. Un archivo correcto debe terminar exactamente en ?>, sin Enter
+     después. Desactive la opción de "salto de línea final" del editor o borre ese último
+     salto de línea.
+
+  Después de compilar ya no está el .php en dist
+     "Clean and Build" y "ant clean" borran la carpeta dist; el paso "-post-jar" de build.xml
+     vuelve a copiar codigo.php e INFORME.txt. Si faltan, verifique que ambos archivos existan
+     en la carpeta raíz del proyecto. Cualquier otro .php debe copiarse a mano.
+
+  "ERROR: no file with the .php extension was found"
+     El .php no está en la misma carpeta que el .jar, o su extensión no es exactamente ".php"
+     (por ejemplo "codigo.PHP" o "codigo.php.txt"; en Windows active "Extensiones de nombre de
+     archivo" en el Explorador para verla).
+
+  "ERROR: could not write the log"
+     La carpeta es de solo lectura o no tiene permisos de escritura. Copie el .jar y el .php a
+     una carpeta donde pueda escribir.
+
+
+11. LIMITACIONES
+---------------------------------------------------------------------------------------------------
+  - No se reconocen heredoc ni nowdoc (<<<).
+  - No se analiza la interpolación dentro de cadenas con comillas dobles: la cadena completa es
+    un solo token (por eso "$variable" dentro de una cadena no cuenta en la tabla de símbolos).
+  - No se realiza análisis sintáctico ni semántico (por ejemplo, variables no declaradas).
+  - Varios bloques PHP intercalados con HTML solo se reportan mediante los errores 105 y 116.
+  - No se aceptan identificadores Unicode (solo ASCII).
+
+
+12. USO DE INTELIGENCIA ARTIFICIAL GENERATIVA
+---------------------------------------------------------------------------------------------------
+12.1 Declaración
+  Este proyecto se desarrolló con apoyo de herramientas de Inteligencia Artificial Generativa,
+  como lo permite el enunciado (sección "Indicaciones Importantes"). El uso de IA se declara en
+  esta sección y en un comentario de la clase principal (src/compilador/Compilador.java).
+
+12.2 Herramientas utilizadas
+  - Claude Code (Anthropic): asistente de programación que se ejecuta en la consola, con el
+    modelo Claude Opus. Se usó desde la carpeta raíz del proyecto, en Windows.
+
+12.3 Metodología de trabajo con la IA
+  El proyecto no se generó con una sola instrucción. Se siguió un proceso en tres pasos:
+
+  a) Especificación previa. Antes de generar código se redactaron dos documentos que la IA
+     debía seguir y que se incluyen en la carpeta raíz del proyecto:
+       - PRD.md: los requisitos del enunciado convertidos en reglas verificables (lectura del
+         archivo, formato del log, catálogo de errores 100-402 con el texto de cada mensaje,
+         arquitectura por etapas del análisis léxico y casos de prueba).
+       - CLAUDE.md: reglas obligatorias para la IA (solo el JDK, sin librerías externas, sin
+         expresiones regulares, código compatible con Java 8, no alterar el código fuente
+         leído, formato exacto de los errores y una responsabilidad por clase).
+         - Claude redactó ambos documentos.
+
+  b) Construcción incremental. El programa se construyó con 10 prompts secuenciales
+     (archivo PROMPTS.md, reproducidos en la sección 13). Cada prompt construye una parte del
+     programa y termina con un paso de verificación ("Verify"). No se pasaba al siguiente
+     prompt hasta comprobar que la verificación del anterior se cumplía.
+
+  c) Ajustes posteriores. Con la IA también se tradujeron los comentarios del código a
+     comentarios de una línea en español, se revisó el enunciado para identificar los
+     requisitos de documentación del uso de IA y se redactó esta sección.
+
+12.4 Partes del proyecto generadas con IA
+  - El código fuente de todos los paquetes: app, io, lexer, lexer.pattern, validation,
+    symbols, errors y report.
+  - El ejecutor de pruebas test/compilador/FixtureRunner.java, los archivos de prueba de
+    test-fixtures y sus bitácoras esperadas (test-fixtures/expected).
+  - El borrador de este INFORME.txt.
+
+12.5 Revisión y verificación realizadas
+  El resultado de cada prompt se revisó y se probó antes de incorporarlo:
+  - Se ejecutó el verificador FixtureRunner sobre los 16 archivos de test-fixtures. Comprueba
+    que cada log es idéntico byte a byte al esperado, que la copia numerada reproduce el
+    archivo fuente y que la concatenación de todos los lexemas es igual al texto original.
+    Resultado: 16 aprobados, 0 fallidos.
+  - Se ejecutó el .jar desde CMD con el codigo.php entregado por el profesor y se obtuvo
+    "No lexical errors found." (sección 7.1).
+  - Se comprobó que el código no usa java.util.regex ni librerías externas (solo java.*).
+
+12.6 Comprensión y responsabilidad
+  El estudiante declara que revisó, adaptó y comprende todo el código entregado, que puede
+  explicar el funcionamiento de cada clase y de cada etapa del análisis léxico, y que asume la
+  responsabilidad total sobre el funcionamiento del sistema.
+
+12.7 Otras fuentes
+  Aparte de las herramientas de IA indicadas, no se utilizó código de libros, ejemplos ni otras
+  fuentes externas.
+
+
+13. ANEXO: PROMPTS PRINCIPALES UTILIZADOS
+---------------------------------------------------------------------------------------------------
+Los prompts se escribieron en inglés y se reproducen textualmente. El archivo PROMPTS.md,
+incluido en la carpeta raíz del proyecto, contiene además el paso de verificación de cada uno.
+
+13.1 Prompts de construcción (PROMPTS.md)
+
+Prompt 1 - Recon, skeleton and error model
+    Read CLAUDE.md and PRD.md completely. Then inspect build.xml, nbproject/project.properties
+    and the existing main class (from main.class) and tell me the base package ({base}) and the
+    jar name that `ant jar` produces. Ensure source.encoding=UTF-8.
+    
+    Create the package skeleton from PRD §6 (empty packages are fine except the ones below) and
+    implement the errors package:
+    - errors/ErrorCode: enum with every code from PRD §5 (100–106, 110–116, 200–205, 300–304,
+      400–402). Each constant has an int code and a category (OPENING_TAG, CLOSING_TAG, IDENTIFIER,
+      COMMENT, LEXEME).
+    - errors/LexicalError: immutable (ErrorCode, line, column, description); Comparable by line,
+      column, code; method toLogLine() returning exactly "Error 200. Line 0005. <description>"
+      (line padded to at least 4 digits).
+    - errors/ErrorCollector: add(...), getSorted(), count(), isEmpty().
+    - app/ExitCode constants, and app/Application with an empty run(String[]) returning 0.
+    Make the existing main class delegate to Application. Java 8 syntax only.
+
+Prompt 2 - Locating and reading the .php file
+    Implement PRD §3 in the io and app packages:
+    - io/PhpFileLocator: resolves the base directory from the jar's CodeSource via toURI()
+      (fallback to user.dir when it is a directory), lists regular files ending exactly in ".php"
+      (case-sensitive), sorted; reports ignored near-misses (.PHP, .php.txt, .phtml) with a reason;
+      resolves an optional CLI argument and rejects a wrong extension.
+    - io/SourceLine (number, content, terminator) and io/SourceFile (path, charset, hadBom,
+      rawText without BOM, List<SourceLine>, lineSeparatorForAppending()).
+    - io/SourceFileReader: readAllBytes, strict UTF-8 decode with ISO-8859-1 fallback, BOM
+      detection, line splitting that keeps \r\n, \n, \r and no phantom last line; empty file = one
+      empty line.
+    - app/CliOptions: optional file argument and -t/--tokens flag.
+    Wire Application to locate and read files and print "File/Lines" per file; handle "no .php
+    found" and "wrong extension" with the exact messages from PRD §3.1 and exit code 1.
+
+Prompt 3 - Error log writer (numbered, byte-faithful copy)
+    Implement io/LogFormat (NUMBER_SEPARATOR = " ", pad width rule) and io/ErrorLogWriter per
+    PRD §4: file name <basename>-errors.log next to the source, numbered copy preserving each
+    line's own terminator, the separator rule when the last line has no terminator, one empty
+    line, then sorted errors or "No lexical errors found.". Write with the source charset.
+    Wire it into Application (no analysis yet, so every log says no errors).
+    Then create test-fixtures/valid_codigo.php (the provided codigo.php WITHOUT a trailing newline,
+    UTF-8 without BOM) and valid_codigo_crlf.php (same, CRLF).
+
+Prompt 4 - Token acquisition: CharacterStream, Token model, lexer modes, tags
+    Implement Stage 1 and the Stage 2 model:
+    - lexer/CharacterStream (peek(k), advance, mark/reset, line/column tracking where \r\n counts
+      as one line break, isAtEnd).
+    - lexer/TokenType, lexer/TokenCategory (mapping from PRD §6), lexer/Token (type, lexeme, line,
+      column, endLine, reported flag).
+    - lexer/LexerMode {INLINE, PHP} and lexer/Lexer with the pattern dispatch loop over a
+      PatternRegistry.
+    - lexer/pattern/LexemePattern, PatternMatch, PatternRegistry, and the first patterns:
+      OpenTagPattern (lexeme rules and malformed variants from PRD §5.1), CloseTagPattern (not
+      "?->"), NewlinePattern, WhitespacePattern. Anything else in PHP mode temporarily becomes
+      UNKNOWN (one char). INLINE mode produces INLINE_TEXT up to the next "<?".
+    - If the file has no "<?" at all, lex everything in PHP mode (PRD §5.1 recovery).
+    Add the invariant check: concatenation of all token lexemes == SourceFile.rawText (assert in
+    a helper used later by FixtureRunner). Implement the --tokens dump in report/ConsoleReporter.
+
+Prompt 5 - Pattern determination: all remaining patterns + classification
+    Implement the remaining Stage 3 patterns, each with Javadoc stating its equivalent regex and,
+    for Variable/Number/String/BlockComment, an explicit enum State transition loop (no regex):
+    - InlineCommentPattern (// and # to end of line, terminator excluded; content never tokenized).
+    - BlockCommentPattern (/* ... */, may span lines -> endLine; unterminated -> UNTERMINATED_COMMENT
+      to EOF).
+    - StringPattern (' " and `, escapes; unterminated -> UNTERMINATED_STRING ending at the end of
+      its starting line, as recovery per PRD §5.5).
+    - VariablePattern ($ followed by [A-Za-z0-9_]*; a lone "$" is a VARIABLE with empty name).
+    - NumberPattern (int, float, .5, exponent, 0x, 0b, underscores; digits followed by letters/_ ->
+      MALFORMED_NUMBER).
+    - WordPattern ([A-Za-z_][A-Za-z0-9_]*, ASCII) and OperatorPattern (longest match over the full
+      PHP operator/punctuator table; '=' alone -> ASSIGN).
+    Implement Stage 2: lexer/ReservedWords (the 20 words; exact-case set for $identifiers,
+    case-insensitive lookup for bare words, both as documented constants) and
+    lexer/TokenClassifier (WORD -> KEYWORD/IDENTIFIER, operator lexeme -> operator TokenType).
+    Pattern order per PRD §6.
+
+Prompt 6 - Validation stage part 1: opening and closing tags
+    Implement validation/Validator, validation/ValidationContext and:
+    - OpeningTagValidator: codes 100–106 exactly as PRD §5.1 (per-line 100/101 for lines before
+      the tag, same-line prefix, malformed lexeme, missing tag, missing whitespace after <?php,
+      additional opening tags, BOM).
+    - ClosingTagValidator: codes 110–116 exactly as PRD §5.2 (last CLOSE_TAG is "the" tag;
+      whitespace vs text on the same line; line-break count including blank/whitespace-only lines;
+      one 112 per content line after; 116 for earlier close tags; 111 for "? >"; the comment hint
+      on 110 when "?>" appeared inside a comment).
+    Add validation to the Application pipeline (validators in PRD order) and write errors to the log.
+    Create fixtures open_leading_ws, open_content_before, open_malformed, open_missing,
+    close_missing, close_trailing_newline, close_trailing_space, close_content_after, bom, empty.
+
+Prompt 7 - Validation stage part 2: identifiers + symbol table
+    Implement:
+    - validation/AssignmentTarget and validation/AssignmentTargetExtractor exactly as PRD §5.3
+      (walk back from each ASSIGN on the same line, adjacency without whitespace, boundary
+      delimiters, base cut at '[', '->', '::', skip destructuring, detect preceding 'const').
+    - validation/IdentifierValidator: rules 205, 203, 200, 201, 202 (one per invalid char,
+      1-based position), 204 (case-sensitive exact match). Constant names after 'const' use the
+      no-$ rule. Mark involved tokens reported=true.
+    - symbols/SymbolTable and SymbolEntry: exact-case keys, first line, occurrence count, from
+      VARIABLE tokens in PHP mode; printed by ConsoleReporter.
+    Create test-fixtures/identifiers.php and expected/identifiers-errors.log from PRD §8.1 (the
+    error section must match character for character).
+
+Prompt 8 - Validation stage part 3: comments and remaining lexemes
+    Implement:
+    - validation/CommentValidator: 300/301 using the orphan-text-line definition in PRD §5.4
+      (depth 0, statement start, only bare words/numbers/unknown with >=1 non-keyword first word not
+      followed by '(' or '::', no ';'), 302 for a statement-initial '/', 303 multi-line block
+      comments, 304 unterminated.
+    - validation/LexemeValidator: 400, 401 (with U+hex), 402; skip tokens already reported.
+    Create test-fixtures/comments.php from PRD §8.2 with its expected log. Confirm with --tokens
+    that no token is produced from comment contents ("if", "while", "echo", "$echo").
+
+Prompt 9 - Fixture runner, edge cases and hardening
+    Create test/{base}/FixtureRunner.java (plain main, NO JUnit) that, for every *.php in the
+    given folder: runs the analysis pipeline programmatically into a temp dir, checks (1) the log
+    equals expected/<name>-errors.log byte for byte, (2) every copy line minus its prefix equals the
+    source line and terminators are identical, (3) the lexeme-concatenation invariant, and prints
+    PASS/FAIL per fixture with a diff of the first mismatching line; exits 1 on any failure.
+    Generate the expected logs for fixtures created in prompts 6–8, then review each one manually
+    against PRD §5 templates before accepting it.
+    Harden: files >9999 lines (padding widens), tabs, trailing spaces on lines, ISO-8859-1 file,
+    two .php files in the folder (two logs), read-only folder (clear console error, exit 1),
+    path with spaces. Review every class for single responsibility, Java 8 compliance, Javadoc
+    stating the lexical stage, and run the grep checks from CLAUDE.md.
+
+Prompt 10 - INFORME.txt (Spanish) and final delivery check
+    Write INFORME.txt in Spanish (UTF-8, plain text, max ~100 columns), at the project root, with:
+    1. Portada: proyecto, curso, integrantes (placeholders), fecha.
+    2. Descripción del analizador léxico y alcance.
+    3. Requisitos: JDK 8 o superior, java en el PATH (cómo comprobar con "java -version").
+    4. Estructura del proyecto y arquitectura POO: explicar las 4 etapas (obtención de tokens,
+       clasificación, determinación de patrones con su expresión regular equivalente, validación
+       de lexemas) indicando los paquetes y clases de cada una.
+    5. Compilación: NetBeans "Clean and Build" y alternativa "ant clean jar"; ubicación del .jar.
+    6. Ejecución paso a paso desde CMD: abrir CMD, cd a la carpeta dist, copiar el .php junto al
+       .jar, "java -jar <Proyecto>.jar", argumento opcional y opción --tokens, códigos de salida.
+    7. Archivo de salida: nombre <nombre>-errors.log, formato de numeración, sección de errores,
+       ejemplo real de la ejecución de codigo.php y de identifiers.php.
+    8. Catálogo completo de errores (códigos 100–402) con descripción y ejemplo.
+    9. Decisiones de diseño: sensibilidad a mayúsculas en palabras reservadas, "Include" tratado
+       como "include", ?> dentro de comentarios ignorado, separador de un espacio configurable,
+       BOM, recuperación de cadenas sin cerrar, sin librerías externas ni expresiones regulares.
+    10. Solución de problemas: "java no se reconoce", tildes en consola (chcp 65001), el editor
+        agrega salto de línea final tras ?> (error 114), "ant clean" borra dist.
+    11. Limitaciones (PRD §10).
+    Then: ant clean jar, copy INFORME.txt and test-fixtures/valid_codigo.php (as codigo.php) into
+    dist, run from CMD, paste the real console output and log into section 7, and walk through the
+    PRD §9 traceability table, reporting each item as met/not met with evidence.
+
+13.2 Prompts adicionales (ajustes posteriores)
+
+Prompt 11 - Comentarios en español
+    Read @PRD.md and @CLAUDE.md before writing any code. For every .java file, change the
+    comments to one line spanish comments, explaining the methods and the code of the project.
+
+Prompt 12 - Requisitos de documentación del uso de IA
+    read the file @proyecto.pdf . the file explains what must be added in the project in order
+    to let the professor know how the project was built with AI. tell me what must be added
+    and done in the project to achieve this
+
+Prompt 13 - Redacción de esta sección
+    Yes, write the AI section of INFORME.txt and add the code comment. And yes, write the
+    study guide for that

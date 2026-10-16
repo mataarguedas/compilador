@@ -1,0 +1,55 @@
+0001 <?php
+0002 // Sistema simple de gestión de notas
+0003 
+0004 # Datos del estudiante
+0005 $nombre_estudiante = "Carlos";
+0006 $cantidad_notas = 4;
+0007 
+0008 Arreglo de notas
+0009 $notas = array(85, 90, 78, 92);
+0010 
+0011 // Mostrar información inicial
+0012 echo "Estudiante: $nombre_estudiante\n";
+0013 echo "Cantidad de notas: $cantidad_notas\n";
+0014 
+0015 // Calcular promedio usando for
+0016 $suma_notas = 0;
+0017 
+0018 for ($i = 0; $i < $cantidad_notas; $i = $i + 1) {
+0019     $suma_notas = $suma_notas + $notas[$i];
+0020 }
+0021 
+0022 $promedio = $suma_notas / $cantidad_notas;
+0023 
+0024 // Mostrar promedio
+0025 echo "Promedio: $promedio\n";
+0026 
+0027 // Evaluar estado del estudiante
+0028 if ($promedio >= 70) {
+0029     echo "Estado: Aprobado\n";
+0030 } else {
+0031     echo "Estado: Reprobado\n";
+0032 }
+0033 
+0034 // Contador de revisión usando while
+0035 $contador_revision = 0;
+0036 
+0037 while ($contador_revision < $cantidad_notas) {
+0038     echo "Revisando nota: " . $notas[$contador_revision] . "\n";
+0039     $contador_revision = $contador_revision + 1;
+0040 }
+0041 
+0042 // Información adicional
+0043 $mensaje_final = "Proceso finalizado correctamente";
+0044 echo $mensaje_final;
+0045 
+0046 // Diferenciación de identificadores
+0047 $total = 100;
+0048 $Total = 200;
+0049 
+0050 $resultado = $total + $Total;
+0051 echo "\nResultado final: $resultado\n";
+0052 
+0053 ?>
+
+Error 301. Line 0008. Text 'Arreglo de notas' is not valid PHP code and is not marked as a comment; inline comments must start with // or #.

@@ -1,0 +1,4 @@
+0001 echo "hello";
+0002 ?>
+
+Error 103. Line 0001. Opening tag '<?php' not found; the file must start with '<?php'.

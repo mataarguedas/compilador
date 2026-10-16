@@ -1,0 +1,4 @@
+0001 
+
+Error 103. Line 0001. Opening tag '<?php' not found; the file must start with '<?php'.
+Error 110. Line 0001. Closing tag '?>' not found; the file must end with '?>'.

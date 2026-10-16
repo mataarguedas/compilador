@@ -1,0 +1,5 @@
+0001 <?PHP
+0002 echo "hi";
+0003 ?>
+
+Error 102. Line 0001. Malformed opening tag '<?PHP'; it must be written exactly as '<?php'.

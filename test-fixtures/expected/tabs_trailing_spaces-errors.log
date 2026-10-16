@@ -1,0 +1,9 @@
+0001 <?php
+0002 	$x = 1;   
+0003 
+0004 	if ($x > 0) {	
+0005 		echo "tab	here";
+0006     }  
+0007 ?>
+
+No lexical errors found.
